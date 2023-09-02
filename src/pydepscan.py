@@ -24,7 +24,7 @@ import enum
 import logging
 import pathlib
 import argparse
-from typing import NamedTuple
+import dataclasses
 from collections.abc import Sequence
 
 __version__ = "1.0.dev0"
@@ -34,10 +34,44 @@ PathType = str | os.PathLike[str]
 NodeType = ast.AST
 
 
-class DependencyScanner(ast.NodeVisitor):
-    """Scan for Python dependencies."""
+@dataclasses.dataclass(slots=True, frozen=True)
+class DependencyData:
+    """Dependency data."""
 
-    def __init__(self, *args, **kwargs):
+    dependencies: set[str] = dataclasses.field(default_factory=set)
+    optional_dependencies: set[str] = dataclasses.field(default_factory=set)
+
+    def remove_stdlib(self):
+        """Remove dependencies coming from the Python standard library."""
+        self.dependencies.difference_update(sys.stdlib_module_names)
+        self.optional_dependencies.difference_update(sys.stdlib_module_names)
+
+    def normalize(self, ignore_stdlib: bool = True):
+        """Normalize the dependency sets.
+
+        Remove mandatory items form the set of optional items.
+        Optionally discard modules/packages of the standard Python library
+        from dependencies.
+        """
+        if ignore_stdlib:
+            self.remove_stdlib()
+        self.optional_dependencies.difference_update(self.dependencies)
+
+    def clear(self):
+        """Delete all the collected data."""
+        self.dependencies.clear()
+        self.optional_dependencies.clear()
+
+    def discard(self, name: str):
+        """Discard the specified dependency."""
+        self.dependencies.discard(name)
+        self.optional_dependencies.discard(name)
+
+
+class DependencyScanner(ast.NodeVisitor):
+    """Scan Python source code for dependencies."""
+
+    def __init__(self, *args, ignore_stdlib: bool = True, **kwargs):
         """Initialize the dependency scanner.
 
         The `ignore_stdlib` option is used to determine whenever the
@@ -49,30 +83,17 @@ class DependencyScanner(ast.NodeVisitor):
 
         .. seealso:: :class:`ast.NodeVisitor`.
         """
-        self._ignore_stdlib: bool = kwargs.pop("ignore_stdlib", True)
+        self._ignore_stdlib: bool = ignore_stdlib
         super().__init__(*args, **kwargs)
-        self.imports: set[str] = set()
-        self.optional_imports: set[str] = set()
-
-    def _normalize_dependencies(self):
-        """Normalize the dependency sets.
-
-        Remove mandatory items form the set of optional items.
-        Optionally discard modules/packages of the standard Python library
-        from dependencies.
-        """
-        if self._ignore_stdlib:
-            self.imports.difference_update(sys.stdlib_module_names)
-            self.optional_imports.difference_update(sys.stdlib_module_names)
-        self.optional_imports.difference_update(self.imports)
+        self.data: DependencyData = DependencyData()
 
     def visit(self, node: NodeType):
         """Visit and AST node and normalize the identified imports."""
         super().visit(node)
-        self._normalize_dependencies()
+        self.data.normalize(ignore_stdlib=self._ignore_stdlib)
 
     @staticmethod
-    def is_global(node: NodeType):
+    def is_global(node: NodeType) -> bool:
         """Return True if the node contains global code.
 
         An heuristic consisting in checking the indentation level is used
@@ -81,8 +102,11 @@ class DependencyScanner(ast.NodeVisitor):
         # TODO: use a safer criterion
         return bool(node.col_offset == 0)
 
-    def _get_imports(self, mandatory: bool = False) -> set:
-        return self.imports if mandatory else self.optional_imports
+    def _get_imports(self, mandatory: bool = False) -> set[str]:
+        if mandatory:
+            return self.data.dependencies
+        else:
+            return self.data.optional_dependencies
 
     @staticmethod
     def _get_basename(name: str) -> str:
@@ -113,20 +137,14 @@ class DependencyScanner(ast.NodeVisitor):
         self.visit(ast_root)
 
 
-class ScanResults(NamedTuple):
-    """Named tuple representing the scan results."""
-
-    dependencies: set[str]
-    optional_dependencies: set[str]
-
-
 def scan(
     *paths: PathType,
+    ignore_stdlib: bool = True,
     pattern: str | None = "**/*.py",
-) -> ScanResults:
+) -> DependencyData:
     """Scan the input modules for dependencies."""
     log = logging.getLogger(__name__)
-    scanner = DependencyScanner()
+    scanner = DependencyScanner(ignore_stdlib=ignore_stdlib)
     for path in paths:
         path = pathlib.Path(path)
         if not path.exists():
@@ -138,12 +156,11 @@ def scan(
                 for module in package.glob(pattern):
                     log.debug(f"scan {module} module ...")
                     scanner.scan(module)
-                scanner.imports.discard(package.name)
-                scanner.optional_imports.discard(package.name)
+                scanner.data.discard(package.name)
         else:
             scanner.scan(path)
 
-    return ScanResults(scanner.imports, scanner.optional_imports)
+    return scanner.data
 
 
 class Format(enum.Enum):
@@ -198,7 +215,7 @@ DEFAULT_LOGLEVEL = logging.DEBUG
 
 try:
     from os import EX_OK
-except ImportError:
+except ImportError:  # pragma: no cover
     EX_OK = 0
 EX_FAILURE = 1
 EX_INTERRUPT = 130
@@ -207,7 +224,7 @@ EX_INTERRUPT = 130
 def _autocomplete(parser):
     try:
         import argcomplete
-    except ImportError:
+    except ImportError:  # pragma: no cover
         pass
     else:
         argcomplete.autocomplete(parser)
@@ -255,7 +272,16 @@ def get_parser(subparsers=None):
             "ignore directories (including the one provided in the input list)"
         ),
     )
-    # TODO: drop dependencies that are part of the standard library
+    parser.add_argument(
+        "--include-stdlib",
+        dest="ignore_stdlib",
+        action="store_false",
+        default=True,
+        help=(
+            "also include in the list of dependencies modules and packages "
+            "belonging to the Python standard library"
+        ),
+    )
 
     # Positional arguments
     parser.add_argument(
@@ -278,12 +304,6 @@ def parse_args(args=None, namespace=None, parser=None):
 
     args = parser.parse_args(args, namespace)
 
-    # Common pre-processing of parsed arguments and consistency checks
-    # ...
-
-    # if getattr(args, "func", None) is None:
-    #     parser.error("no sub-command specified.")
-
     return args
 
 
@@ -300,15 +320,12 @@ def main(*argv):
     # execute main tasks
     exit_code = EX_OK
     try:
-        results = scan(*args.modules)
+        results = scan(*args.modules, ignore_stdlib=args.ignore_stdlib)
 
-        deps = results.dependencies
-        optional_deps = results.optional_dependencies
+        deps = sorted(results.dependencies)
+        optional_deps = sorted(results.optional_dependencies)
 
-        sorted_deps = sorted(deps if deps else [])
-        sorted_optional_deps = sorted(optional_deps if optional_deps else [])
-
-        print(format_dependencies(sorted_deps, sorted_optional_deps, args.fmt))
+        print(format_dependencies(deps, optional_deps, args.fmt))
     except Exception as exc:
         log.critical(
             "unexpected exception caught: {!r} {}".format(
@@ -324,5 +341,5 @@ def main(*argv):
     return exit_code
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  # pragma: no cover
     sys.exit(main())
