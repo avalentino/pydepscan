@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "pydepscan"
+authors = [
+    {name = "Antonio Valentino", email = "antonio.valentino@tiscali.it"},
+]
+description = "Python dependency scanner."
+readme = {file = "README.rst", content-type = "text/x-rst"}
+requires-python = ">=3.10"
+keywords = ["dependency"]
+license = {text = "Apache-2.0"}
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Utilities",
+]
+# dependencies = []
+dynamic = ["version"]
+
+
+[project.optional-dependencies]
+cli = ["argcomplete"]
+# test = ["pytest"]
+
+
+[project.scripts]
+pydepscan = "pydepscan:main"
+
+
+[project.urls]
+homepage = "https://github.com/avalentino/pydepscan"
+repository = "https://github.com/avalentino/pydepscan.git"
+changelog = "https://github.com/avalentino/pydepscan/blob/main/NEWS.rst"
+
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+py-modules = ["pydepscan"]
+zip-safe = true
+# license-files = ["LICENSE"]
+
+
+[tool.setuptools.dynamic]
+version = {attr = "pydepscan.__version__"}
+
+
+[tool.pytest.ini_options]
+addopts = "--ignore=examples/"
+
+
+[tool.black]
+line-length = 79
+target-version = ["py310"]
+
+
+[tool.isort]
+profile = "black"
+length_sort = true
+no_inline_sort = true
+include_trailing_comma = true
+use_parentheses = true
+line_length = 79
+
+[tool.mypy]
+python_version = "3.10"
+warn_return_any = true
+warn_unused_configs = true
+# exclude = [
+#     '^file1\.py$',  # TOML literal string (single-quotes, no escaping necessary)
+#     "^file2\\.py$",  # TOML basic string (double-quotes, backslash and other characters need escaping)
+# ]
