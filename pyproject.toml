@@ -27,7 +27,7 @@ dynamic = ["version"]
 
 [project.optional-dependencies]
 cli = ["argcomplete"]
-# test = ["pytest"]
+full = ["pydepscan[cli]"]
 
 
 [project.scripts]
