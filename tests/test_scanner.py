@@ -73,7 +73,7 @@ def test_module_path(tmp_path_factory):
     [
         pytest.param(True, EXPECTED_RESULTS[True], id="ignore_stdlib=True"),
         pytest.param(False, EXPECTED_RESULTS[False], id="ignore_stdlib=False"),
-        pytest.param(None, EXPECTED_RESULTS[True], id="defaulr_ignore_stdlib"),
+        pytest.param(None, EXPECTED_RESULTS[True], id="default_ignore_stdlib"),
     ],
 )
 def test_dependency_scanner(ignore_stdlib, results, test_module_path):
