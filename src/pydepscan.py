@@ -210,8 +210,8 @@ def format_dependencies(
 
 PROG = pathlib.Path(__file__).stem
 LOGFMT = "%(levelname)s: %(message)s"
-# DEFAULT_LOGLEVEL = logging.WARNING
-DEFAULT_LOGLEVEL = logging.DEBUG
+DEFAULT_LOGLEVEL = "WARNING"
+# DEFAULT_LOGLEVEL = "DEBUG"
 
 try:
     from os import EX_OK
@@ -230,6 +230,43 @@ def _autocomplete(parser):
         argcomplete.autocomplete(parser)
 
 
+def _add_logging_control_args(parser, default_loglevel=DEFAULT_LOGLEVEL):
+    """Add command line options for logging control."""
+    loglevels = [logging.getLevelName(level) for level in range(10, 60, 10)]
+
+    parser.add_argument(
+        "--loglevel",
+        default=default_loglevel,
+        choices=loglevels,
+        help="logging level (default: %(default)s)",
+    )
+    parser.add_argument(
+        "-q",
+        "--quiet",
+        dest="loglevel",
+        action="store_const",
+        const="ERROR",
+        help="suppress standard output messages, "
+        "only errors are printed to screen",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        dest="loglevel",
+        action="store_const",
+        const="INFO",
+        help="print verbose output messages",
+    )
+    parser.add_argument(
+        "-d",
+        "--debug",
+        dest="loglevel",
+        action="store_const",
+        const="DEBUG",
+        help="print debug messages",
+    )
+
+
 def get_parser(subparsers=None):
     """Instantiate the command line argument (sub-)parser."""
     name = PROG
@@ -244,6 +281,8 @@ def get_parser(subparsers=None):
     else:
         parser = subparsers.add_parser(name, description=doc, help=synopsis)
         # parser.set_defaults(func=info)
+
+    _add_logging_control_args(parser)
 
     # Command line options
     parser.add_argument(
@@ -320,6 +359,8 @@ def main(*argv):
     # execute main tasks
     exit_code = EX_OK
     try:
+        logging.getLogger().setLevel(args.loglevel)
+
         results = scan(*args.modules, ignore_stdlib=args.ignore_stdlib)
 
         deps = sorted(results.dependencies)
