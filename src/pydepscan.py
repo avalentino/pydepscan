@@ -100,7 +100,7 @@ class DependencyScanner(ast.NodeVisitor):
         for the purpose.
         """
         # TODO: use a safer criterion
-        return bool(node.col_offset == 0)
+        return bool(node.col_offset == 0)  # type: ignore[attr-defined]
 
     def _get_imports(self, mandatory: bool = False) -> set[str]:
         if mandatory:
