@@ -71,7 +71,9 @@ class DependencyData:
 class DependencyScanner(ast.NodeVisitor):
     """Scan Python source code for dependencies."""
 
-    def __init__(self, *args, ignore_stdlib: bool = True, **kwargs):
+    def __init__(
+        self, *args, ignore_stdlib: bool = True, level: int = 0, **kwargs
+    ):
         """Initialize the dependency scanner.
 
         The `ignore_stdlib` option is used to determine whenever the
@@ -84,6 +86,7 @@ class DependencyScanner(ast.NodeVisitor):
         .. seealso:: :class:`ast.NodeVisitor`.
         """
         self._ignore_stdlib: bool = ignore_stdlib
+        self._level = level
         super().__init__(*args, **kwargs)
         self.data: DependencyData = DependencyData()
 
@@ -109,14 +112,14 @@ class DependencyScanner(ast.NodeVisitor):
             return self.data.optional_dependencies
 
     @staticmethod
-    def _get_basename(name: str) -> str:
+    def _get_name(name: str, level: int = 0) -> str:
         # a.b.c --> a
-        return name.split(".")[0]
+        return ".".join(name.split(".")[: level + 1])
 
     def visit_Import(self, node: ast.Import):  # noqa: N802
         """Detect dependencies from Import nodes."""
         s = self._get_imports(self.is_global(node))
-        s.update(self._get_basename(item.name) for item in node.names)
+        s.update(self._get_name(item.name, self._level) for item in node.names)
         return self.generic_visit(node)
 
     def visit_ImportFrom(self, node: ast.ImportFrom):  # noqa: N802
@@ -126,7 +129,16 @@ class DependencyScanner(ast.NodeVisitor):
         #   from .something import ...
         if node.module is not None and node.level == 0:
             s = self._get_imports(self.is_global(node))
-            s.add(self._get_basename(node.module))
+            s.add(self._get_name(node.module, self._level))
+            if self._level > 0:
+                s.update(
+                    self._get_name(
+                        ".".join([node.module, alias.name]), self._level
+                    )
+                    for alias in node.names
+                )
+            else:
+                s.add(self._get_name(node.module, self._level))
         return self.generic_visit(node)
 
     def scan(self, path: PathType):
@@ -141,10 +153,11 @@ def scan(
     *paths: PathType,
     ignore_stdlib: bool = True,
     pattern: str | None = "**/*.py",
+    level: int = 0,
 ) -> DependencyData:
     """Scan the input modules for dependencies."""
     log = logging.getLogger(__name__)
-    scanner = DependencyScanner(ignore_stdlib=ignore_stdlib)
+    scanner = DependencyScanner(ignore_stdlib=ignore_stdlib, level=level)
     for path in paths:
         path = pathlib.Path(path)
         if not path.exists():
@@ -210,6 +223,7 @@ def format_dependencies(
 
 PROG = pathlib.Path(__file__).stem
 LOGFMT = "%(levelname)s: %(message)s"
+
 DEFAULT_LOGLEVEL = "WARNING"
 # DEFAULT_LOGLEVEL = "DEBUG"
 
@@ -312,6 +326,7 @@ def get_parser(subparsers=None):
         ),
     )
     parser.add_argument(
+        "-s",
         "--include-stdlib",
         dest="ignore_stdlib",
         action="store_false",
@@ -319,6 +334,23 @@ def get_parser(subparsers=None):
         help=(
             "also include in the list of dependencies modules and packages "
             "belonging to the Python standard library"
+        ),
+    )
+
+    parser.add_argument(
+        "-l",
+        "--level",
+        type=int,
+        default=0,
+        help=(
+            "specify up to which level to include sub-packages in the output. "
+            "This is mostly useful for namespace packages for which the "
+            "namespace itself could not be sufficient to unver the "
+            "dependencies. "
+            "Level=0 means that only the toplevel package is reported. "
+            "Level=1 means that the first sub-pachage is also included in "
+            "putput, e.g. 'namespace.subpackage'. "
+            "Default: %(default)s."
         ),
     )
 
@@ -361,7 +393,9 @@ def main(*argv):
     try:
         logging.getLogger().setLevel(args.loglevel)
 
-        results = scan(*args.modules, ignore_stdlib=args.ignore_stdlib)
+        results = scan(
+            *args.modules, ignore_stdlib=args.ignore_stdlib, level=args.level
+        )
 
         deps = sorted(results.dependencies)
         optional_deps = sorted(results.optional_dependencies)
