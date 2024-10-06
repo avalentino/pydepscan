@@ -53,7 +53,9 @@ version = {attr = "pydepscan.__version__"}
 
 [tool.pytest.ini_options]
 addopts = "--ignore=examples/"
-
+pythonpath = [
+    "src"
+]
 
 [tool.black]
 line-length = 79
