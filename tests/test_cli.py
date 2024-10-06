@@ -2,6 +2,8 @@
 
 import os
 import json
+import logging
+from unittest import mock
 
 import pytest
 
@@ -127,3 +129,23 @@ if True:
 
     data = parse_text_output(capsys.readouterr().out)
     assert data == ref_data
+
+
+def test_main_exception(caplog):
+    with mock.patch.object(pydepscan, "scan") as mock_scan:
+        mock_scan.side_effect = Exception("Boom!")
+        with caplog.at_level(logging.DEBUG, "pydepscan"):
+            ret = pydepscan.main("dummy.py")
+            assert ret == pydepscan.EX_FAILURE
+            assert "CRITICAL" in caplog.text
+            assert "Boom!" in caplog.text
+            assert "DEBUG" in caplog.text
+
+
+def test_main_keyboard_interrupt(caplog):
+    with mock.patch.object(pydepscan, "scan") as mock_scan:
+        mock_scan.side_effect = KeyboardInterrupt
+        ret = pydepscan.main("dummy.py")
+        assert ret == pydepscan.EX_INTERRUPT
+        assert "WARNING" in caplog.text
+        assert "Keyboard" in caplog.text

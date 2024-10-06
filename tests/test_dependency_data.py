@@ -136,6 +136,41 @@ def test_discard(deps, opt_deps, discard, ref_deps, ref_opt_defs):
     assert data.optional_dependencies == ref_opt_defs
 
 
+@pytest.mark.parametrize(
+    ["subpkg", "deps", "opt_deps", "discard", "ref_deps", "ref_opt_defs"],
+    [
+        pytest.param(
+            True,
+            {"a", "b", "c", "c.x"},
+            {"c", "d.x", "e"},
+            "c",
+            {"a", "b"},
+            {"d.x", "e"},
+            id="subpackage_true",
+        ),
+        pytest.param(
+            False,
+            {"a", "b", "c", "c.x"},
+            {"c", "d.x", "e"},
+            "c",
+            {"a", "b", "c.x"},
+            {"d.x", "e"},
+            id="subpackage_false",
+        ),
+    ],
+)
+def test_discard_subpackages(
+    subpkg, deps, opt_deps, discard, ref_deps, ref_opt_defs
+):
+    data = pydepscan.DependencyData(deps, opt_deps)
+    data.discard(discard, subpackages=subpkg)
+
+    assert isinstance(data.dependencies, set)
+    assert isinstance(data.optional_dependencies, set)
+    assert data.dependencies == ref_deps
+    assert data.optional_dependencies == ref_opt_defs
+
+
 def test_clear():
     deps = {"a", "b", "c"}
     opt_deps = {"c", "d", "e"}

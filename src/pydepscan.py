@@ -43,8 +43,10 @@ class DependencyData:
 
     def remove_stdlib(self):
         """Remove dependencies coming from the Python standard library."""
-        self.dependencies.difference_update(sys.stdlib_module_names)
-        self.optional_dependencies.difference_update(sys.stdlib_module_names)
+        # self.dependencies.difference_update(sys.stdlib_module_names)
+        # self.optional_dependencies.difference_update(sys.stdlib_module_names)
+        for name in sys.stdlib_module_names:
+            self.discard(name, subpackages=True)
 
     def normalize(self, ignore_stdlib: bool = True):
         """Normalize the dependency sets.
@@ -62,10 +64,24 @@ class DependencyData:
         self.dependencies.clear()
         self.optional_dependencies.clear()
 
-    def discard(self, name: str):
+    def discard(self, name: str, subpackages: bool = False):
         """Discard the specified dependency."""
         self.dependencies.discard(name)
         self.optional_dependencies.discard(name)
+        if subpackages:
+            prefix = name + "."
+            items = [
+                item for item in self.dependencies if item.startswith(prefix)
+            ]
+            for item in items:
+                self.dependencies.discard(item)
+            items = [
+                item
+                for item in self.optional_dependencies
+                if item.startswith(prefix)
+            ]
+            for item in items:
+                self.optional_dependencies.discard(item)
 
 
 class DependencyScanner(ast.NodeVisitor):
@@ -129,7 +145,7 @@ class DependencyScanner(ast.NodeVisitor):
         #   from .something import ...
         if node.module is not None and node.level == 0:
             s = self._get_imports(self.is_global(node))
-            s.add(self._get_name(node.module, self._level))
+            # s.add(self._get_name(node.module, self._level))
             if self._level > 0:
                 s.update(
                     self._get_name(
@@ -292,7 +308,7 @@ def get_parser(subparsers=None):
         parser.add_argument(
             "--version", action="version", version="%(prog)s v" + __version__
         )
-    else:
+    else:  # pragma: no cover
         parser = subparsers.add_parser(name, description=doc, help=synopsis)
         # parser.set_defaults(func=info)
 
